@@ -1,14 +1,15 @@
 use async_std::task;
-use retainer::*;
+use retainer_wl::*;
 use smol::Timer;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use log::debug;
 
 #[async_std::test]
 async fn test_async_std() {
     // construct our cache
-    let cache = Arc::new(Cache::new());
+    let cache = Arc::new(Cache::new(None));
     let clone = cache.clone();
 
     // spawn the monitor
@@ -25,7 +26,7 @@ async fn test_async_std() {
 fn test_smol() {
     smol::block_on(async {
         // construct our cache
-        let cache = Arc::new(Cache::new());
+        let cache = Arc::new(Cache::new(None));
         let clone = cache.clone();
 
         // spawn the monitor
@@ -45,15 +46,24 @@ fn test_smol() {
 #[tokio::test]
 async fn test_tokio() {
     // construct our cache
-    let cache = Arc::new(Cache::new());
+    let (sx, mut rx) = tokio::sync::mpsc::unbounded_channel::<&str>();
+    let cache = Arc::new(Cache::new(Some(sx)));
     let clone = cache.clone();
-
+    tokio::spawn(async move {
+        loop {
+            let message = rx.recv().await;
+            if message.is_some() {
+                println!("removed {:?}",message.unwrap());
+            } else {
+                break;
+            }
+        }
+    });
     // spawn the monitor
     let monitor = tokio::spawn(async move {
         // don't forget to monitor your cache to evict entries
         clone.monitor(3, 0.25, Duration::from_secs(3)).await
     });
-
     // execute the set of base tests
     execute_base_test(cache).await;
 
