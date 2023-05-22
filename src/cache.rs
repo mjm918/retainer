@@ -10,6 +10,7 @@
 //! on how this works can be seen on the `monitor` method of the `Cache` type.
 use std::cmp;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::{Debug, Display};
 use std::marker::PhantomData;
 use std::time::{Duration, Instant};
 
@@ -17,6 +18,7 @@ use async_lock::{RwLock, RwLockUpgradableReadGuard};
 use async_timer::Interval;
 use log::{debug, log_enabled, trace, Level};
 use rand::prelude::*;
+use tokio::sync::mpsc::{UnboundedSender as Sender};
 
 use crate::entry::{CacheEntry, CacheExpiration, CacheReadGuard};
 
@@ -39,17 +41,19 @@ macro_rules! unpack {
 pub struct Cache<K, V> {
     store: RwLock<BTreeMap<K, CacheEntry<V>>>,
     label: String,
+    sender: Option<Sender<K>>
 }
 
 impl<K, V> Cache<K, V>
 where
-    K: Ord + Clone,
+    K: Ord + Clone + Display + Debug,
 {
     /// Construct a new `Cache`.
-    pub fn new() -> Self {
+    pub fn new(sender: Option<Sender<K>>) -> Self {
         Self {
             store: RwLock::new(BTreeMap::new()),
             label: "".to_owned(),
+            sender,
         }
     }
 
@@ -228,6 +232,9 @@ where
 
                 // remove all expired keys
                 for key in &keys {
+                    if let Some(sender) = &self.sender {
+                        sender.send(key.clone()).unwrap();
+                    }
                     store.remove(key);
                 }
 
@@ -305,9 +312,9 @@ where
 /// Default implementation.
 impl<K, V> Default for Cache<K, V>
 where
-    K: Ord + Clone,
+    K: Ord + Clone + Display + Debug,
 {
     fn default() -> Self {
-        Cache::new()
+        Cache::new(None)
     }
 }
